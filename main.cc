@@ -11,6 +11,7 @@
 #include <omp.h>
 #include "hnswlib/hnswlib/hnswlib.h"
 #include "flat_scan.h"
+#include "simple_simd.h"
 // 可以自行添加需要的头文件
 
 using namespace hnswlib;
