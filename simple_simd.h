@@ -8,7 +8,7 @@ float innerProductSimd(float *target,float *test,size_t vecdim){
     for(int i =0; i<vecdim; i+=8){
     simd8float32 s1(target+i), s2(test+i);
     simd8float32 m=s1*s2;
-    sum+=m;
+    sum=sum+m;
     }
    
     float tmp[8];
