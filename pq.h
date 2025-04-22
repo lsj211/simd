@@ -119,6 +119,28 @@ std::vector<std::vector<float>> precompute_lut(const float *queries, size_t num_
 }
 
 
+std::vector<float> precompute_lut_one(const float *query, size_t vecdim,const std::vector<std::vector<std::vector<float>>>& centroids) 
+{
+    const int division = 4;
+    const size_t div_dim = vecdim / division;
+    const size_t K = 256;
+    std::vector<float> lut(division * K);//对每一个查询向量都进行预处理
+        for (int k_sub = 0; k_sub < division; ++k_sub) {
+            const float* query_sub = query + k_sub * div_dim;
+            for (int center_id = 0; center_id < K; ++center_id) {
+                const float* centroid = centroids[k_sub][center_id].data();
+                float sum = 0.0;
+                for(int t=0;t<div_dim;t++)
+                {
+                    sum+=centroid[t]*query_sub[t];
+                }
+                lut[k_sub * K + center_id] = sum;
+            }
+        }
+    
+    return lut;
+}
+
 
 std::priority_queue<std::pair<float, uint32_t>> pq_search(
     float *base, float *test,size_t base_number,size_t vecdim,
@@ -144,7 +166,6 @@ std::priority_queue<std::pair<float, uint32_t>> pq_search(
             q.pop();
         }
     }
-    // return q;
     std::priority_queue<std::pair<float, uint32_t>> result;
     for(size_t i=0;i<rerank;i++)
     {
@@ -164,3 +185,108 @@ std::priority_queue<std::pair<float, uint32_t>> pq_search(
     }
     return result;
 }
+
+
+
+
+std::priority_queue<std::pair<float, uint32_t>> pq_search_one(
+    float *base, float *test,size_t base_number,size_t vecdim,
+    size_t test_number, size_t k,
+    const std::vector<std::vector<int>>& labels,std::vector<float> LUT,size_t rerank) {
+    std::priority_queue<std::pair<float, uint32_t>> q;
+    const int division = 4;
+ 
+    const size_t K = 256;
+    for (size_t i = 0; i < base_number; ++i) {
+        float total_inner = 0.0;
+        for (int k_sub = 0; k_sub < division; ++k_sub) {
+            int cluster_id = labels[k_sub][i];
+            total_inner += LUT[k_sub * K + cluster_id];
+        }
+        float distance = 1.0 - total_inner;
+
+        if (q.size() < rerank) {
+            q.push({distance, i});
+        } else if (distance < q.top().first) {
+          
+            q.push({distance, i}); 
+            q.pop();
+        }
+    }
+    std::priority_queue<std::pair<float, uint32_t>> result;
+    for(size_t i=0;i<rerank;i++)
+    {
+       size_t id=q.top().second;
+       float dis=innerProductSimd(base+id*vecdim,test,vecdim);
+       q.pop();
+       if (result.size() < k) 
+       {
+         result.push({dis, id});
+       } 
+       else if (dis < result.top().first)
+        {
+      
+            result.push({dis, id}); 
+            result.pop();
+       }
+    }
+    return result;
+}
+
+
+std::priority_queue<std::pair<float, uint32_t>> pq_search_simd(
+    float *base, float *test,size_t base_number,size_t vecdim,
+    size_t test_number, size_t k,
+    const std::vector<std::vector<int>>& labels,std::vector<float> LUT,size_t rerank) {
+    std::priority_queue<std::pair<float, uint32_t>> q;
+    const int division = 4;
+ 
+    const size_t K = 256;
+    for (size_t i = 0; i < base_number; i+=8) {
+        float MetaResulta1[8];
+        float MetaResulta2[8];
+        float MetaResulta3[8];
+        float MetaResulta4[8];
+        for(size_t j=0;j<8;j++)
+        {
+            MetaResulta1[j]=LUT[labels[0][i+j]];
+            MetaResulta2[j]=LUT[K+labels[1][i+j]];
+            MetaResulta3[j]=LUT[2*K+labels[2][i+j]];
+            MetaResulta4[j]=LUT[3*K+labels[3][i+j]];
+        }
+        simd8float32 a1(MetaResulta1),a2(MetaResulta2),a3(MetaResulta3),a4(MetaResulta4);
+        simd8float32 result(1.0f);
+        result=result-(a1+a2+a3+a4);
+        float distance[8];
+        result.storeu(distance);
+        for(size_t j=0;j<8;j++)
+        {
+            if(q.size()<rerank)
+            {
+                q.push({distance[j],i+j});
+            }else if(distance[j]<q.top().first){
+                q.push({distance[j],i+j});
+                q.pop();
+            }
+        }
+    }
+    std::priority_queue<std::pair<float, uint32_t>> result;
+    for(size_t i=0;i<rerank;i++)
+    {
+       size_t id=q.top().second;
+       float dis=innerProductSimd(base+id*vecdim,test,vecdim);
+       q.pop();
+       if (result.size() < k) 
+       {
+         result.push({dis, id});
+       } 
+       else if (dis < result.top().first)
+        {
+      
+            result.push({dis, id}); 
+            result.pop();
+       }
+    }
+    return result;
+}
+
