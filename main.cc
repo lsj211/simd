@@ -67,10 +67,18 @@ int main(int argc, char *argv[])
     size_t test_number = 0, base_number = 0;
     size_t test_gt_d = 0, vecdim = 0;
 
-    std::string data_path = "/anndata/"; 
-    auto test_query = LoadData<float>(data_path + "DEEP100K.query.fbin", test_number, vecdim);
-    auto test_gt = LoadData<int>(data_path + "DEEP100K.gt.query.100k.top100.bin", test_number, test_gt_d);
-    auto base = LoadData<float>(data_path + "DEEP100K.base.100k.fbin", base_number, vecdim);
+    std::string data_path2 = "/anndata/"; 
+    // std::string data_path = "/files/"; 
+    auto test_query = LoadData<float>(data_path2 + "DEEP100K.query.fbin", test_number, vecdim);
+    auto test_gt = LoadData<int>(data_path2 + "DEEP100K.gt.query.100k.top100.bin", test_number, test_gt_d);
+    auto base = LoadData<float>(data_path2 + "DEEP100K.base.100k.fbin", base_number, vecdim);
+    // auto test_query = LoadData<uint8_t>(data_path + "DEEP100K.query.fbin", test_number, vecdim);
+    // auto base = LoadData<uint8_t>(data_path + "DEEP100K.base.100k.fbin", base_number, vecdim);
+    std::vector<std::vector<int>> labels;
+    std::vector<std::vector<std::vector<float>>> centroids;
+    kmeans(base,base_number,vecdim,centroids,labels);
+    // quantize_and_write_to_file(test_query,test_number,vecdim,"DEEP100K.query.fbin");
+    // quantize_and_write_to_file(base,base_number,vecdim,"DEEP100K.base.100k.fbin");
     // 只测试前2000条查询
     test_number = 2000;
 
@@ -78,15 +86,15 @@ int main(int argc, char *argv[])
 
     std::vector<SearchResult> results;
     results.resize(test_number);
+    auto LUT=precompute_lut(test_query,test_number,vecdim,centroids);
+    // // 如果你需要保存索引，可以在这里添加你需要的函数，你可以将下面的注释删除来查看pbs是否将build.index返回到你的files目录中
+    // // 要保存的目录必须是files/*
+    // // 每个人的目录空间有限，不需要的索引请及时删除，避免占空间太大
+    // // 不建议在正式测试查询时同时构建索引，否则性能波动会较大
+    // // 下面是一个构建hnsw索引的示例
+    // // build_index(base, base_number, vecdim);
 
-    // 如果你需要保存索引，可以在这里添加你需要的函数，你可以将下面的注释删除来查看pbs是否将build.index返回到你的files目录中
-    // 要保存的目录必须是files/*
-    // 每个人的目录空间有限，不需要的索引请及时删除，避免占空间太大
-    // 不建议在正式测试查询时同时构建索引，否则性能波动会较大
-    // 下面是一个构建hnsw索引的示例
-    // build_index(base, base_number, vecdim);
-
-    
+    size_t rerank=200;
     // 查询测试代码
     for(int i = 0; i < test_number; ++i) {
         const unsigned long Converter = 1000 * 1000;
@@ -95,7 +103,8 @@ int main(int argc, char *argv[])
 
         // 该文件已有代码中你只能修改该函数的调用方式
         // 可以任意修改函数名，函数参数或者改为调用成员函数，但是不能修改函数返回值。
-        auto res = flat_search(base, test_query + i*vecdim, base_number, vecdim, k);
+        // auto res = flat_search_sq(base, test_query + i*vecdim, base_number, vecdim, k);
+        auto res = pq_search(base,test_query + i*vecdim,base_number,vecdim,i,k,labels,LUT,rerank);
 
         struct timeval newVal;
         ret = gettimeofday(&newVal, NULL);
